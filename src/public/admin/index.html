@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin | Cadastro de Imoveis</title>
+    <link rel="stylesheet" href="/admin/admin.css" />
+  </head>
+  <body>
+    <div class="bg"></div>
+
+    <main class="shell">
+      <header class="top">
+        <div class="brand">
+          <div class="logo"></div>
+          <div>
+            <p class="eyebrow">ADMIN PRIVADO</p>
+            <h1>Novo Imovel</h1>
+          </div>
+        </div>
+        <div class="top-actions">
+          <a class="ghost" href="/" target="_blank">Ver site</a>
+          <button id="clear-form" class="ghost">Limpar</button>
+        </div>
+      </header>
+
+      <section class="panel">
+        <div class="mode-toggle">
+          <label>Modo</label>
+          <select id="admin-mode">
+            <option value="add">Adicionar</option>
+            <option value="delete">Excluir</option>
+          </select>
+        </div>
+
+        <form id="imovel-form">
+          <div class="grid">
+            <div class="field">
+              <label>Titulo</label>
+              <input name="titulo" required placeholder="Cobertura Panoramica" maxlength="120" />
+            </div>
+            <div class="field">
+              <label>Categoria</label>
+              <select name="categoria" required>
+                <option value="Venda">Venda</option>
+                <option value="Aluguel">Aluguel</option>
+              </select>
+            </div>
+
+            <div class="field span-2">
+              <label>Descricao</label>
+              <textarea name="descricao" rows="4" required maxlength="2000" placeholder="Detalhes do imovel, diferenciais e acabamentos."></textarea>
+            </div>
+
+            <div class="field venda-only">
+              <label>Preco de Venda (R$)</label>
+              <input id="preco-venda" name="preco" type="number" step="0.01" />
+            </div>
+
+            <div class="field aluguel-only">
+              <label>Valor do Aluguel (R$)</label>
+              <input id="valor-aluguel" name="valorAluguel" type="number" step="0.01" />
+            </div>
+            <div class="field aluguel-only">
+              <label>Condominio (R$)</label>
+              <input id="valor-condominio" name="condominio" type="number" step="0.01" />
+            </div>
+            <div class="field aluguel-only">
+              <label>IPTU (R$)</label>
+              <input id="valor-iptu" name="iptu" type="number" step="0.01" />
+            </div>
+            <div class="field">
+              <label>Area (m2)</label>
+              <input name="areaM2" type="number" step="0.01" required />
+            </div>
+
+            <div class="field">
+              <label>Cidade</label>
+              <input name="cidade" required />
+            </div>
+            <div class="field">
+              <label>Bairro</label>
+              <input name="bairro" required />
+            </div>
+
+            <div class="field">
+              <label>Quartos</label>
+              <input name="quartos" type="number" min="0" required />
+            </div>
+            <div class="field">
+              <label>Suites</label>
+              <input name="suites" type="number" min="0" />
+            </div>
+            <div class="field">
+              <label>Vagas</label>
+              <input name="vagas" type="number" min="0" />
+            </div>
+
+            <div class="field">
+              <label>Mobilado</label>
+              <select name="mobilado" required>
+                <option value="nao">Nao</option>
+                <option value="sim">Sim</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label>Aceita Pet</label>
+              <select name="aceitaPet" required>
+                <option value="nao">Nao</option>
+                <option value="sim">Sim</option>
+              </select>
+            </div>
+
+            <div class="field span-2">
+              <label>Fotos (URLs)</label>
+              <div class="photo-input">
+                <input id="foto-url" placeholder="https://..." />
+                <button id="add-foto" type="button">Adicionar</button>
+              </div>
+              <div class="file-input">
+                <input id="foto-file" name="fotosFiles" type="file" accept="image/*" multiple />
+              </div>
+              <div id="fotos-list" class="fotos-list"></div>
+              <input type="hidden" name="fotos" id="fotos-hidden" />
+              <p class="hint">Voce pode enviar imagens locais ou colar URLs.</p>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button type="submit" class="primary">Salvar imovel</button>
+            <span id="status" class="status"></span>
+          </div>
+        </form>
+
+        <div id="delete-panel" class="delete-panel hidden">
+          <div class="delete-header">
+            <h3>Excluir imovel</h3>
+            <button id="reload-list" class="ghost" type="button">Atualizar lista</button>
+          </div>
+          <div id="delete-list" class="delete-list"></div>
+          <span id="delete-status" class="status"></span>
+          <p class="hint">Selecione um imovel para excluir permanentemente.</p>
+        </div>
+      </section>
+    </main>
+
+    <div id="confirm-modal" class="confirm-modal hidden" aria-hidden="true">
+      <div class="confirm-card">
+        <h3>Confirmar exclusao</h3>
+        <p id="confirm-text"></p>
+        <div class="confirm-actions">
+          <button id="confirm-cancel" class="ghost" type="button">Cancelar</button>
+          <button id="confirm-delete" class="danger" type="button">Excluir</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/admin/admin.js"></script>
+  </body>
+</html>
