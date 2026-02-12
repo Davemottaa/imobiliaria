@@ -176,7 +176,12 @@ function createPhotoCard({ previewSrc, label, meta, removeText }) {
   thumb.className = 'photo-thumb';
 
   const img = document.createElement('img');
-  img.src = previewSrc;
+  const safePreviewSrc = normalizePreviewSrc(previewSrc);
+  if (safePreviewSrc) {
+    img.src = safePreviewSrc;
+  } else {
+    img.removeAttribute('src');
+  }
   img.alt = label;
   img.loading = 'lazy';
   thumb.appendChild(img);
@@ -222,6 +227,13 @@ function isValidImageUrl(value) {
   } catch (err) {
     return false;
   }
+}
+
+function normalizePreviewSrc(value) {
+  const src = String(value || '').trim();
+  if (!src) return '';
+  if (src.startsWith('blob:')) return src;
+  return isValidImageUrl(src) ? src : '';
 }
 
 function buildFileFingerprint(file) {

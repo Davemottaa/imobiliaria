@@ -14,8 +14,28 @@ const { z } = require('zod');
 
 const app = express();
 
+function parseAllowedCorsOrigins(envValue) {
+  if (!envValue) return [];
+  return envValue
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .filter((value) => value !== '*');
+}
+
+const allowedCorsOrigins = parseAllowedCorsOrigins(process.env.CORS_ORIGIN);
+
+const corsOptions = {
+  origin(origin, callback) {
+    // Requests sem Origin (curl, server-to-server) podem seguir.
+    if (!origin) return callback(null, true);
+    if (allowedCorsOrigins.includes(origin)) return callback(null, true);
+    return callback(null, false);
+  }
+};
+
 app.use(helmet());
-app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
+app.use(cors(corsOptions));
 app.use(morgan('dev'));
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
