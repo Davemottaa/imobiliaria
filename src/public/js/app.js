@@ -56,11 +56,12 @@ async function loadImoveis() {
   if (filters.cidade.value) params.append('cidade', sanitizeInput(filters.cidade.value));
   if (filters.bairro.value) params.append('bairro', sanitizeInput(filters.bairro.value));
   if (filters.categoria.value) params.append('categoria', sanitizeInput(filters.categoria.value));
-  if (filters.precoMax.value) params.append('precoMax', filters.precoMax.value);
+  if (filters.precoMax.value) params.append('precoMax', sanitizeInput(filters.precoMax.value));
 
   const response = await fetch(`/api/imoveis?${params.toString()}`);
   const data = await response.json();
-  renderImoveis(data);
+  const imoveis = Array.isArray(data) ? data : data?.data || [];
+  renderImoveis(imoveis);
 }
 
 function openModal(imovel) {

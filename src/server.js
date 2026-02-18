@@ -13,6 +13,11 @@ const xssClean = require('xss-clean');
 const { z } = require('zod');
 
 const app = express();
+const shouldLogImoveisFilters = process.env.LOG_IMOVEIS_FILTERS === 'true';
+
+function compactObject(obj = {}) {
+  return Object.fromEntries(Object.entries(obj).filter(([, value]) => value !== undefined));
+}
 
 function parseAllowedCorsOrigins(envValue) {
   if (!envValue) return [];
@@ -49,7 +54,6 @@ app.use(
     legacyHeaders: false
   })
 );
-app.use(express.static(path.join(__dirname, 'public')));
 
 function adminAuth(req, res, next) {
   const authHeader = req.headers.authorization || '';
@@ -57,8 +61,12 @@ function adminAuth(req, res, next) {
     ? authHeader.split(' ')[1]
     : null;
 
-  const user = process.env.ADMIN_USER || 'admin';
-  const pass = process.env.ADMIN_PASS || 'admin';
+  const user = process.env.ADMIN_USER;
+  const pass = process.env.ADMIN_PASS;
+
+  if (!user || !pass) {
+    return res.status(500).send('Credenciais de admin nao configuradas no servidor.');
+  }
 
   if (!token) {
     res.set('WWW-Authenticate', 'Basic realm="Admin"');
@@ -78,6 +86,7 @@ function adminAuth(req, res, next) {
 
 app.use('/admin', adminAuth, express.static(path.join(__dirname, 'public', 'admin')));
 app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
+app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/', (req, res) => {
   res.type('html');
@@ -109,6 +118,11 @@ const imovelSchema = new mongoose.Schema(
 );
 
 const Imovel = mongoose.model('Imovel', imovelSchema);
+let imovelStore = Imovel;
+
+function setImovelStoreForTesting(store) {
+  imovelStore = store || Imovel;
+}
 
 const chatCache = new Map();
 const CHAT_CACHE_VERSION = 'v4';
@@ -397,13 +411,26 @@ const upload = multer({
 
 function buildQueryFromFilters(filters = {}) {
   const query = {};
+  const hasPrecoMin = filters.precoMin !== undefined;
+  const hasPrecoMax = filters.precoMax !== undefined;
   if (filters.cidade) query['localizacao.cidade'] = filters.cidade;
   if (filters.bairro) query['localizacao.bairro'] = filters.bairro;
   if (filters.categoria) query.categoria = filters.categoria;
-  if (filters.precoMin || filters.precoMax) {
-    query.preco = {};
-    if (filters.precoMin) query.preco.$gte = filters.precoMin;
-    if (filters.precoMax) query.preco.$lte = filters.precoMax;
+  if (hasPrecoMin || hasPrecoMax) {
+    const faixaPreco = {};
+    if (hasPrecoMin) faixaPreco.$gte = filters.precoMin;
+    if (hasPrecoMax) faixaPreco.$lte = filters.precoMax;
+
+    if (filters.categoria === 'Venda') {
+      query.preco = faixaPreco;
+    } else if (filters.categoria === 'Aluguel') {
+      query.valorAluguel = faixaPreco;
+    } else {
+      query.$or = [
+        { categoria: 'Venda', preco: { ...faixaPreco } },
+        { categoria: 'Aluguel', valorAluguel: { ...faixaPreco } }
+      ];
+    }
   }
   if (filters.quartosMin) query.quartos = { $gte: filters.quartosMin };
   if (filters.areaMin) query.areaM2 = { $gte: filters.areaMin };
@@ -440,7 +467,7 @@ app.post('/api/ai/chat', async (req, res, next) => {
     if (cached) return res.json(cached);
 
     const query = buildQueryFromFilters(filters);
-    const imoveis = await Imovel.find(query).limit(10).lean();
+    const imoveis = await imovelStore.find(query).limit(10).lean();
     let filteredImoveis = imoveis;
     if (message) {
       filteredImoveis = applyMessageFilters(imoveis, message, Boolean(strictTipo));
@@ -463,8 +490,14 @@ app.post('/api/ai/chat', async (req, res, next) => {
   }
 });
 
-app.get('/api/imoveis', async (req, res, next) => {
+async function listImoveisHandler(req, res, next) {
   try {
+    const pageRaw = Number.parseInt(req.query.page, 10);
+    const limitRaw = Number.parseInt(req.query.limit, 10);
+    const page = Number.isInteger(pageRaw) && pageRaw > 0 ? pageRaw : 1;
+    const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 100) : 20;
+    const skip = (page - 1) * limit;
+
     const filters = {
       cidade: req.query.cidade,
       bairro: req.query.bairro,
@@ -476,21 +509,59 @@ app.get('/api/imoveis', async (req, res, next) => {
     };
 
     const query = buildQueryFromFilters(filters);
-    const imoveis = await Imovel.find(query).sort({ createdAt: -1 }).lean();
-    return res.json(imoveis);
+    if (shouldLogImoveisFilters) {
+      console.log(
+        '[imoveis:list] filtros recebidos',
+        JSON.stringify({
+          rawQuery: req.query,
+          filters: compactObject(filters),
+          mongoQuery: query
+        })
+      );
+    }
+
+    const [total, imoveis] = await Promise.all([
+      imovelStore.countDocuments(query),
+      imovelStore.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean()
+    ]);
+    if (shouldLogImoveisFilters) {
+      console.log(
+        '[imoveis:list] resultado',
+        JSON.stringify({
+          page,
+          limit,
+          total,
+          returned: imoveis.length,
+          ids: imoveis.map((item) => item._id?.toString())
+        })
+      );
+    }
+    return res.json({
+      data: imoveis,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit))
+      }
+    });
   } catch (err) {
     return next(err);
   }
-});
+}
 
-app.get('/admin', adminAuth, (req, res) => {
+app.get('/api/imoveis', listImoveisHandler);
+
+function adminPageHandler(req, res) {
   res.type('html');
   res.sendFile(path.join(__dirname, 'public', 'admin', 'index.html'));
-});
+}
+
+app.get('/admin', adminAuth, adminPageHandler);
 
 app.get('/admin/api/imoveis', adminAuth, async (req, res, next) => {
   try {
-    const imoveis = await Imovel.find({})
+    const imoveis = await imovelStore.find({})
       .select('titulo categoria localizacao preco valorAluguel createdAt')
       .sort({ createdAt: -1 })
       .lean();
@@ -503,7 +574,7 @@ app.get('/admin/api/imoveis', adminAuth, async (req, res, next) => {
 app.delete('/admin/api/imoveis/:id', adminAuth, async (req, res, next) => {
   try {
     const { id } = req.params;
-    const deleted = await Imovel.findByIdAndDelete(id);
+    const deleted = await imovelStore.findByIdAndDelete(id);
     if (!deleted) return res.status(404).json({ error: 'Imovel nao encontrado.' });
     return res.json({ message: 'Imovel excluido.' });
   } catch (err) {
@@ -530,7 +601,7 @@ app.post('/admin', adminAuth, upload.array('fotosFiles', 8), async (req, res, ne
       });
     }
 
-    const imovel = await Imovel.create({
+    const imovel = await imovelStore.create({
       titulo: parsed.titulo,
       descricao: parsed.descricao,
       preco: parsed.preco,
@@ -579,9 +650,14 @@ async function start() {
   if (!mongoUri) {
     throw new Error('MONGODB_URI nao configurada.');
   }
+  if (!process.env.ADMIN_USER || !process.env.ADMIN_PASS) {
+    throw new Error('ADMIN_USER e ADMIN_PASS precisam estar configuradas.');
+  }
 
   await mongoose.connect(mongoUri);
-  await seedIfEmpty();
+  if (process.env.NODE_ENV !== 'production' && process.env.SEED_ON_START !== 'false') {
+    await seedIfEmpty();
+  }
   const port = process.env.PORT || 3000;
   app.listen(port, () => {
     console.log(`API rodando em http://localhost:${port}`);
@@ -589,10 +665,10 @@ async function start() {
 }
 
 async function seedIfEmpty() {
-  const count = await Imovel.countDocuments();
+  const count = await imovelStore.countDocuments();
   if (count > 0) return;
 
-  await Imovel.insertMany([
+  await imovelStore.insertMany([
     {
       titulo: 'Cobertura Panoramica no Centro',
       descricao: 'Cobertura com vista 360, acabamento premium e area gourmet integrada.',
@@ -649,7 +725,19 @@ async function seedIfEmpty() {
   console.log('Seed inicial de imoveis criado.');
 }
 
-start().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (require.main === module) {
+  start().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  app,
+  start,
+  adminAuth,
+  adminPageHandler,
+  listImoveisHandler,
+  buildQueryFromFilters,
+  setImovelStoreForTesting
+};
